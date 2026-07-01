@@ -1,4 +1,5 @@
 import json
+import threading
 
 import pytest
 
@@ -58,3 +59,31 @@ def test_next_repo_index_wraps_around(isolated_home):
     state.save_state({"last_index": 2})
 
     assert state.next_repo_index(3) == 0
+
+
+def test_next_repo_index_creates_lock_file(isolated_home):
+    state.next_repo_index(3)
+
+    assert state.lock_path().exists()
+
+
+def test_next_repo_index_is_race_free_under_concurrency(isolated_home):
+    num_repos = 5
+    call_count = 20
+    results = []
+    results_lock = threading.Lock()
+
+    def worker():
+        result = state.next_repo_index(num_repos)
+        with results_lock:
+            results.append(result)
+
+    threads = [threading.Thread(target=worker) for _ in range(call_count)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(results) == call_count
+    saved = json.loads((isolated_home / "state.json").read_text())
+    assert saved["last_index"] == (call_count - 1) % num_repos
