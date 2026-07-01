@@ -343,6 +343,16 @@ Standard GitHub checklist so it's human-readable and diffable:
 12. **Exit 0.** Any failure path above exits non-zero after cleanup, but does
     not crash the timer (errors are caught per-repo).
 
+**Rollback guarantee:** steps 4-10 are wrapped in a single try/except in
+`iterate.py` (`run_for_repo` / `_iterate_once`) that hard-resets the clone
+to the pre-run commit on **any** exception, not just the expected
+guardrail/validation failures. This was added after an early real run hit
+an unhandled `FileNotFoundError` from the agent subprocess (see
+README "Troubleshooting") — the original code only reset on the specific
+failure branches it anticipated, so that crash left `TODO.md`'s bootstrap
+write on disk uncommitted, permanently failing the "clean working tree"
+pre-flight check on every subsequent run until manually cleaned up.
+
 ## Guardrails detail
 
 - Forbidden paths are glob-matched against every file in `git diff --name-only`
@@ -358,10 +368,17 @@ Standard GitHub checklist so it's human-readable and diffable:
 
 ## Open items / assumptions to revisit later
 
-- Assumes `claude`, `git` are reachable on `cron-iterate`'s `PATH` inside the
-  hardened systemd environment (may need an explicit `Environment=PATH=...`
-  in the service file since systemd services don't inherit a login shell's
-  PATH).
+- **Resolved during install testing**: a normal `claude` install is a
+  symlink under `~/.local/bin` pointing into `~/.local/share/claude/versions/`,
+  both under the human's home directory. `ProtectHome=yes` hides `/home`
+  from the sandboxed service at the kernel level regardless of `PATH`, so
+  the service failed with `FileNotFoundError: ... 'claude'` even with
+  `Environment=PATH=/usr/local/bin:/usr/bin:/bin` set. Fix: copy the
+  resolved binary (a self-contained executable, verified via `ldd` to have
+  no other home-dir dependencies) to `/usr/local/bin/claude` — see README.md
+  step 2. Deliberately a one-time copy, not a symlink or bind-mount into
+  `/home`, to keep the "no access to the human's files" property intact
+  rather than punching a hole in `ProtectHome` for convenience.
 - Network egress isn't actually restricted to Anthropic/GitHub yet (see
   "Known limitation" above) — currently relies on there being nothing else
   worth reaching from this account, not on an enforced allowlist.

@@ -29,7 +29,33 @@ sudo -u cron-iterate mkdir -p /var/lib/cron-iterate/repos \
 sudo chmod 700 /var/lib/cron-iterate/.ssh /var/lib/cron-iterate/.claude
 ```
 
-## 2. Deploy the tool's code
+## 2. Make the `claude` CLI reachable to the sandboxed service
+
+`ProtectHome=yes` in the systemd unit hides `/home` (and `/root`,
+`/run/user/*`) from the service entirely, at the kernel namespace level —
+independent of file permissions. If `claude` is installed the normal way
+(native installer → `~/.local/bin/claude`, a symlink into
+`~/.local/share/claude/versions/<version>`), the sandboxed service can't
+see it no matter what `PATH` is set to, and fails with
+`FileNotFoundError: [Errno 2] No such file or directory: 'claude'`.
+
+Fix: install a standalone copy of the actual binary somewhere outside
+`/home` that the service's `PATH` (`/usr/local/bin:/usr/bin:/bin`) can
+reach:
+
+```bash
+sudo install -o root -g root -m 755 \
+  "$(readlink -f "$(command -v claude)")" /usr/local/bin/claude
+```
+
+This is a one-time copy, not a symlink, so it keeps working even though
+the source is hidden from the sandboxed process. It won't auto-update when
+your personal `claude` CLI does — that's arguably a feature for a daily
+unattended job (no surprise breakage from an upstream update), but re-run
+the command above whenever you deliberately want the automation to pick up
+a newer CLI version.
+
+## 3. Deploy the tool's code
 
 From your clone of this repo:
 
@@ -48,7 +74,7 @@ Install Python dependencies where `python3` on the system can see them:
 sudo pip install -r requirements.txt
 ```
 
-## 3. Configure target repos
+## 4. Configure target repos
 
 Copy the template and edit it:
 
@@ -63,7 +89,7 @@ project has one (strongly recommended — this gates every push). See the
 comments in `config.yaml` and the "Configuration format" section of
 `plan.md` for all fields.
 
-## 4. Set up git push credentials
+## 5. Set up git push credentials
 
 Generate a single SSH keypair for the automation user:
 
@@ -84,7 +110,7 @@ doesn't hang on a host-key prompt:
 sudo -u cron-iterate bash -c 'ssh-keyscan github.com >> /var/lib/cron-iterate/.ssh/known_hosts'
 ```
 
-## 5. Set up Claude Code credentials
+## 6. Set up Claude Code credentials
 
 Copy your own credentials into the automation user's home (this shares your
 existing login/subscription — usage isn't tracked separately):
@@ -95,7 +121,7 @@ sudo chown -R cron-iterate:cron-iterate /var/lib/cron-iterate/.claude
 sudo chmod 600 /var/lib/cron-iterate/.claude/.credentials.json
 ```
 
-## 6. Install and enable the systemd timer
+## 7. Install and enable the systemd timer
 
 ```bash
 sudo cp systemd/cron-iterate.service systemd/cron-iterate.timer /etc/systemd/system/
@@ -108,7 +134,7 @@ sandboxed with `ProtectHome=yes`, `ProtectSystem=strict`, and related
 hardening directives (see `plan.md` → "Isolation & sandboxing" for what
 each one does and why).
 
-## 7. Verify it works
+## 8. Verify it works
 
 Trigger one run manually and watch it:
 
@@ -125,8 +151,59 @@ repo will pick the first idea and implement it.
 Check `/var/lib/cron-iterate/logs/` for the raw `claude` transcript of each
 run, and `git log` on the target repo for the actual commits pushed.
 
+## Debugging
+
+Every run logs a version line first, e.g.:
+
+```
+iterate.py sha256=5300ced274c5 path=/opt/cron-auto-iterate-gh/iterate.py | commit=e4da4a6 deployed_at=2026-07-01T15:02:30Z
+```
+
+That's always visible with plain `journalctl -u cron-iterate` (no `sudo`
+needed to read the journal, unlike `/opt` itself), and directly answers
+"am I running stale code?": compare `commit=` against `git log -1` in your
+dev clone, or the `sha256=` against `sha256sum iterate.py` there. A
+`+uncommitted-changes` suffix means `deploy.sh` was run against a dirty
+dev tree. If you forgot to run `./deploy.sh` after an edit, this is the
+line that tells you.
+
+For anything else, run the read-only diagnostic instead of waiting for the
+timer or digging through `journalctl`:
+
+```bash
+sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check           # all repos
+sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check --repo NAME # one repo
+```
+
+It reports, without touching anything except a `git fetch`: whether the
+repo is cloned yet, its branch, the exact `git status --porcelain` output
+if the working tree is dirty, ahead/behind counts vs. `origin`, and the
+next backlog item (or "will brainstorm"). This is the fastest way to find
+out *why* a run keeps aborting instead of guessing from the one-line log
+message.
+
+Add `-v`/`--verbose` to either a real run or `--check` for full DEBUG-level
+tracing of every git command executed (command, cwd, exit code,
+stdout/stderr) — useful when even `--check`'s report doesn't explain the
+behavior:
+
+```bash
+sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check -v
+```
+
 ## Troubleshooting
 
+- **`working tree is not clean` keeps happening even right after a fresh
+  clone**: run `--check` on that repo to see the exact dirty files. If a
+  previous run crashed with an exception the code didn't anticipate
+  (rather than a normal validation/guardrail failure), older versions of
+  `iterate.py` could leave the clone dirty forever - redeploy the latest
+  code (`./deploy.sh`) and delete the stuck clone
+  (`sudo rm -rf /var/lib/cron-iterate/repos/<name>`) to let it re-clone
+  cleanly on the next run.
+- **`FileNotFoundError: [Errno 2] No such file or directory: 'claude'`**:
+  `claude` is installed under your home directory and `ProtectHome=yes`
+  hides all of `/home` from the sandboxed service — see step 2.
 - **Service fails immediately / `SIGSYS` from claude**: a systemd hardening
   directive is blocking something `claude` (a Node/V8 process) needs.
   `journalctl -u cron-iterate` will show the syscall/violation; the unit
@@ -136,7 +213,7 @@ run, and `git log` on the target repo for the actual commits pushed.
   don't block networking, but double-check `/etc/resolv.conf` is reachable
   under the sandbox (it usually is; some minimal container-like setups
   differ).
-- **`git push` hangs**: usually a missing `known_hosts` entry — see step 4.
+- **`git push` hangs**: usually a missing `known_hosts` entry — see step 5.
 - **Run aborts with "working tree is not clean" / "not in sync with
   origin"**: by design — the tool refuses to touch a repo clone that isn't
   in a known-good state. Check `/var/lib/cron-iterate/repos/<name>`

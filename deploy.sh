@@ -16,11 +16,26 @@ if ! id -u cron-iterate >/dev/null 2>&1; then
   exit 1
 fi
 
+# Version stamp so `iterate.py` can self-report exactly what's deployed
+# (journalctl output is readable without sudo, unlike /opt itself).
+COMMIT="$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+DIRTY=""
+if ! git -C "$SRC" diff --quiet -- 2>/dev/null || ! git -C "$SRC" diff --quiet --cached -- 2>/dev/null; then
+  DIRTY=" +uncommitted-changes"
+fi
+DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+VERSION_LINE="commit=${COMMIT}${DIRTY} deployed_at=${DEPLOYED_AT}"
+if [[ -n "$DIRTY" ]]; then
+  echo "warning: deploying with uncommitted local changes in $SRC" >&2
+fi
+
 sudo mkdir -p "$DEST"
 sudo cp "$SRC/iterate.py" "$DEST/iterate.py"
 sudo rsync -a --delete "$SRC/lib/" "$DEST/lib/"
 sudo rsync -a --delete "$SRC/prompts/" "$DEST/prompts/"
+echo "$VERSION_LINE" | sudo tee "$DEST/VERSION" > /dev/null
 sudo chown -R root:cron-iterate "$DEST"
 sudo chmod -R 750 "$DEST"
 
 echo "deployed $SRC -> $DEST (root:cron-iterate, 750)"
+echo "$VERSION_LINE"

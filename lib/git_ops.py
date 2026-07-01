@@ -4,8 +4,11 @@ All functions operate on a single repo checkout by path. Kept deliberately
 low-level/explicit (no GitPython dependency) so behavior is easy to audit.
 """
 
+import logging
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger("iterate.git")
 
 
 class GitError(Exception):
@@ -18,6 +21,14 @@ def _run(repo_path: Path, args: list[str], check: bool = True) -> subprocess.Com
         cwd=repo_path,
         capture_output=True,
         text=True,
+    )
+    logger.debug(
+        "git %s (cwd=%s) -> rc=%s stdout=%r stderr=%r",
+        " ".join(args),
+        repo_path,
+        result.returncode,
+        result.stdout.strip(),
+        result.stderr.strip(),
     )
     if check and result.returncode != 0:
         raise GitError(
@@ -44,26 +55,37 @@ def get_current_branch(repo_path: Path) -> str:
     return _run(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
 
 
+def status_porcelain(repo_path: Path) -> str:
+    """Raw `git status --porcelain` output - empty string means clean."""
+    return _run(repo_path, ["status", "--porcelain"]).stdout.strip()
+
+
 def is_clean(repo_path: Path) -> bool:
-    return _run(repo_path, ["status", "--porcelain"]).stdout.strip() == ""
+    return status_porcelain(repo_path) == ""
 
 
 def fetch(repo_path: Path) -> None:
     _run(repo_path, ["fetch", "--prune"])
 
 
-def is_synced(repo_path: Path, branch: str) -> bool:
-    """True if HEAD is neither ahead of nor behind origin/<branch>."""
+def ahead_behind(repo_path: Path, branch: str) -> tuple[int, int] | None:
+    """(ahead, behind) counts of HEAD vs origin/<branch>, or None if that
+    remote-tracking ref doesn't exist locally (e.g. never fetched)."""
     result = _run(
         repo_path,
         ["rev-list", "--left-right", "--count", f"HEAD...origin/{branch}"],
         check=False,
     )
     if result.returncode != 0:
-        # e.g. origin/<branch> doesn't exist yet locally
-        return False
+        return None
     ahead, behind = result.stdout.split()
-    return ahead == "0" and behind == "0"
+    return int(ahead), int(behind)
+
+
+def is_synced(repo_path: Path, branch: str) -> bool:
+    """True if HEAD is neither ahead of nor behind origin/<branch>."""
+    counts = ahead_behind(repo_path, branch)
+    return counts == (0, 0)
 
 
 def get_head_commit(repo_path: Path) -> str:
