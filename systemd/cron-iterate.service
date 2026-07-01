@@ -1,0 +1,45 @@
+[Unit]
+Description=cron-auto-iterate-gh: one autonomous project iteration
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cron-iterate
+Group=cron-iterate
+WorkingDirectory=/var/lib/cron-iterate
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /opt/cron-auto-iterate-gh/iterate.py
+TimeoutStartSec=1200
+
+# Filesystem isolation
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cron-iterate
+PrivateTmp=yes
+PrivateDevices=yes
+
+# Privilege / kernel surface restriction
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# NOT setting MemoryDenyWriteExecute=yes: the claude CLI is a Node/V8
+# process and V8's JIT needs W+X memory pages. Enabling this directive
+# makes claude crash (SIGSYS) on every invocation.
+RestrictRealtime=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+# Network: only IP sockets, no raw/packet sockets
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Resource caps
+CPUQuota=200%
+MemoryMax=4G
+TasksMax=256

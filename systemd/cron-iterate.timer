@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily trigger for cron-auto-iterate-gh
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target
