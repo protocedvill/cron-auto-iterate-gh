@@ -23,6 +23,8 @@ DEFAULT_FORBIDDEN_PATHS = [
     ".github/workflows/**",
     "**/secrets/**",
 ]
+DEFAULT_COMMITTER_NAME = "cron-auto-iterate-gh"
+DEFAULT_COMMITTER_EMAIL = "cron-iterate@localhost"
 
 
 class ConfigError(Exception):
@@ -43,6 +45,8 @@ class RepoConfig:
     max_turns: int = DEFAULT_MAX_TURNS
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     forbidden_paths: list = field(default_factory=lambda: list(DEFAULT_FORBIDDEN_PATHS))
+    committer_name: str = DEFAULT_COMMITTER_NAME
+    committer_email: str = DEFAULT_COMMITTER_EMAIL
 
     @property
     def path(self) -> Path:
@@ -76,6 +80,8 @@ def load_config(path: Path | None = None) -> Config:
     default_max_turns = defaults.get("max_turns", DEFAULT_MAX_TURNS)
     default_timeout = defaults.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
     default_forbidden = defaults.get("forbidden_paths", DEFAULT_FORBIDDEN_PATHS)
+    default_committer_name = defaults.get("committer_name", DEFAULT_COMMITTER_NAME)
+    default_committer_email = defaults.get("committer_email", DEFAULT_COMMITTER_EMAIL)
 
     repos = []
     seen_names = set()
@@ -97,6 +103,8 @@ def load_config(path: Path | None = None) -> Config:
                 max_turns=entry.get("max_turns", default_max_turns),
                 timeout_seconds=entry.get("timeout_seconds", default_timeout),
                 forbidden_paths=entry.get("forbidden_paths", default_forbidden),
+                committer_name=entry.get("committer_name", default_committer_name),
+                committer_email=entry.get("committer_email", default_committer_email),
             )
         )
 

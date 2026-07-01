@@ -148,7 +148,7 @@ def _iterate_once(repo_cfg: RepoConfig, repo_path: Path, branch: str, pre_commit
     else:
         message = "chore: add auto-iteration ideas to TODO.md\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
 
-    git_ops.commit_all(repo_path, message)
+    git_ops.commit_all(repo_path, message, repo_cfg.committer_name, repo_cfg.committer_email)
     git_ops.push(repo_path, branch)
     logger.info("[%s] pushed %s change to %s", repo_cfg.name, mode, branch)
 

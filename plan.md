@@ -275,6 +275,8 @@ defaults:
     - "**/id_rsa*"
     - ".github/workflows/**"
     - "**/secrets/**"
+  committer_name: "cron-auto-iterate-gh"
+  committer_email: "cron-iterate@localhost"
 ```
 
 Note: `path:` was replaced with `name:` + `remote:` — the actual on-disk
@@ -282,6 +284,14 @@ clone path is always derived as `/var/lib/cron-iterate/repos/<name>`, since
 that's the only location `cron-iterate` is allowed to write to. This
 removes an entire class of misconfiguration (accidentally pointing the
 tool at a path under the human's `$HOME`).
+
+`committer_name`/`committer_email` are passed explicitly on every `git
+commit` via `-c user.name=... -c user.email=...` (see `git_ops.commit_all`)
+rather than relying on the `cron-iterate` account having its own global git
+config — found necessary during install testing (see memory/plan history:
+first real commit attempt failed with "Author identity unknown" since a
+fresh system user has no `git config --global` set up, and requiring one
+would've been an easy-to-forget manual step outside this repo's control).
 
 `state.json` (auto-managed, not hand-edited):
 ```json

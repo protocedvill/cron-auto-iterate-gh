@@ -110,9 +110,23 @@ def reset_hard(repo_path: Path, commit: str) -> None:
     _run(repo_path, ["clean", "-fd"])
 
 
-def commit_all(repo_path: Path, message: str) -> None:
+def commit_all(repo_path: Path, message: str, committer_name: str, committer_email: str) -> None:
+    """Commit with an explicit identity passed via -c, rather than relying on
+    the cron-iterate account having git user.name/user.email configured
+    globally - keeps the tool self-contained with no extra install step."""
     _run(repo_path, ["add", "-A"])
-    _run(repo_path, ["commit", "-m", message])
+    _run(
+        repo_path,
+        [
+            "-c",
+            f"user.name={committer_name}",
+            "-c",
+            f"user.email={committer_email}",
+            "commit",
+            "-m",
+            message,
+        ],
+    )
 
 
 def push(repo_path: Path, branch: str) -> None:

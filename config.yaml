@@ -21,3 +21,9 @@ defaults:
     - "**/id_rsa*"
     - ".github/workflows/**"
     - "**/secrets/**"
+  # Passed explicitly on every `git commit` via `-c user.name=... -c
+  # user.email=...` - no `git config --global` setup needed on the
+  # cron-iterate account. Override per-repo if you want commits attributed
+  # differently for a given project.
+  committer_name: "cron-auto-iterate-gh"
+  committer_email: "cron-iterate@localhost"

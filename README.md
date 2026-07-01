@@ -214,6 +214,13 @@ sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check -v
   under the sandbox (it usually is; some minimal container-like setups
   differ).
 - **`git push` hangs**: usually a missing `known_hosts` entry — see step 5.
+- **`fatal: unable to auto-detect email address` / `Author identity
+  unknown`**: shouldn't happen — commits always pass an explicit identity
+  via `git -c user.name=... -c user.email=...` (see `committer_name`/
+  `committer_email` in `config.yaml`), specifically so the `cron-iterate`
+  account never needs its own `git config --global` setup. If you see this,
+  you're running code from before that fix — redeploy (`./deploy.sh`) and
+  check the version line in the journal.
 - **Run aborts with "working tree is not clean" / "not in sync with
   origin"**: by design — the tool refuses to touch a repo clone that isn't
   in a known-good state. Check `/var/lib/cron-iterate/repos/<name>`
