@@ -33,15 +33,23 @@ def version_info() -> str:
     """Identify exactly which code is running - logged on every invocation so
     `journalctl -u cron-iterate` alone answers "am I running stale code?"
     without needing filesystem access to /opt (which is root-owned).
+
+    Hashes iterate.py plus lib/*.py and prompts/*.md, since deploy.sh syncs
+    those directories separately from iterate.py itself.
     """
     script_path = Path(__file__).resolve()
-    file_hash = hashlib.sha256(script_path.read_bytes()).hexdigest()[:12]
-    version_file = script_path.parent / "VERSION"
+    root = script_path.parent
+    tracked_files = [script_path, *sorted(root.glob("lib/*.py")), *sorted(root.glob("prompts/*.md"))]
+    combined_hash = hashlib.sha256()
+    for path in tracked_files:
+        combined_hash.update(path.read_bytes())
+    file_hash = combined_hash.hexdigest()[:12]
+    version_file = root / "VERSION"
     if version_file.exists():
         deploy_stamp = version_file.read_text().strip()
     else:
         deploy_stamp = "no VERSION file found (deployed without deploy.sh, or a version predating this feature)"
-    return f"iterate.py sha256={file_hash} path={script_path} | {deploy_stamp}"
+    return f"iterate.py+lib+prompts sha256={file_hash} files={len(tracked_files)} path={script_path} | {deploy_stamp}"
 
 
 def pick_repo(config: Config, forced_name: str | None) -> RepoConfig:
