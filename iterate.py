@@ -54,7 +54,7 @@ def pick_repo(config: Config, forced_name: str | None) -> RepoConfig:
     return config.repos[index]
 
 
-def run_for_repo(repo_cfg: RepoConfig) -> None:
+def run_for_repo(repo_cfg: RepoConfig, dry_run: bool = False) -> None:
     repo_path = repo_cfg.path
 
     if git_ops.clone_if_missing(repo_path, repo_cfg.remote):
@@ -103,22 +103,34 @@ def run_for_repo(repo_cfg: RepoConfig) -> None:
     # dirty for the next scheduled run.
     pre_commit = git_ops.get_head_commit(repo_path)
     try:
-        _iterate_once(repo_cfg, repo_path, branch, pre_commit)
+        _iterate_once(repo_cfg, repo_path, branch, pre_commit, dry_run)
     except Exception:
         git_ops.reset_hard(repo_path, pre_commit)
         raise
 
 
-def _iterate_once(repo_cfg: RepoConfig, repo_path: Path, branch: str, pre_commit: str) -> None:
-    backlog.ensure_exists(repo_path, repo_cfg.todo_file)
+def _iterate_once(
+    repo_cfg: RepoConfig, repo_path: Path, branch: str, pre_commit: str, dry_run: bool
+) -> None:
+    # first_unchecked() handles a missing TODO.md fine (treats it as no open
+    # items) - ensure_exists() is deferred until after the dry-run check so
+    # a dry run never creates any file, incidentally or otherwise. Creating
+    # it here unconditionally previously left an untracked TODO.md behind
+    # after every dry run (an empty commit doesn't include it), permanently
+    # failing the next run's clean-working-tree pre-flight check.
     task = backlog.first_unchecked(repo_path, repo_cfg.todo_file)
+    mode = "implement" if task else "brainstorm"
 
-    if task:
-        mode = "implement"
+    if dry_run:
+        _dry_run_commit(repo_cfg, repo_path, branch, mode, task)
+        return
+
+    backlog.ensure_exists(repo_path, repo_cfg.todo_file)
+
+    if mode == "implement":
         prompt = agent.render_prompt("implement_task", task=task)
         logger.info("[%s] implement mode: %s", repo_cfg.name, task)
     else:
-        mode = "brainstorm"
         prompt = agent.render_prompt("brainstorm")
         logger.info("[%s] brainstorm mode (no open TODO items)", repo_cfg.name)
 
@@ -164,6 +176,35 @@ def _iterate_once(repo_cfg: RepoConfig, repo_path: Path, branch: str, pre_commit
     git_ops.commit_all(repo_path, message, repo_cfg.committer_name, repo_cfg.committer_email)
     git_ops.push(repo_path, branch)
     logger.info("[%s] pushed %s change to %s", repo_cfg.name, mode, branch)
+
+
+def _dry_run_commit(
+    repo_cfg: RepoConfig, repo_path: Path, branch: str, mode: str, task: str | None
+) -> None:
+    """Exercises the rest of the pipeline (test_cmd, commit, push) without
+    ever invoking claude - useful for verifying the surrounding automation
+    (sandboxing, git identity, deploy key, network egress) works, without
+    spending any agent turns or touching real files."""
+    logger.info("[%s] DRY RUN: skipping claude invocation (mode=%s)", repo_cfg.name, mode)
+
+    if mode == "implement" and repo_cfg.test_cmd:
+        result = subprocess.run(
+            repo_cfg.test_cmd, shell=True, cwd=repo_path, capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            raise AbortRun(
+                f"[dry run] validation command '{repo_cfg.test_cmd}' failed:\n"
+                f"{result.stdout}\n{result.stderr}"
+            )
+
+    if mode == "implement":
+        message = f"[DRY RUN] Auto-iterate: would implement '{task}' (claude not invoked)"
+    else:
+        message = "[DRY RUN] chore: would brainstorm new TODO.md ideas (claude not invoked)"
+
+    git_ops.commit_empty(repo_path, message, repo_cfg.committer_name, repo_cfg.committer_email)
+    git_ops.push(repo_path, branch)
+    logger.info("[%s] pushed DRY RUN empty commit to %s", repo_cfg.name, branch)
 
 
 def run_diagnostics(repo_cfg: RepoConfig) -> None:
@@ -237,12 +278,22 @@ def main() -> int:
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="debug logging, including every git command run"
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="do everything a real run does (clone, pre-flight checks, backlog read, "
+        "test_cmd, commit, push) except invoke claude - makes an empty commit instead "
+        "of real changes. Useful for testing the surrounding pipeline/sandbox without "
+        "spending agent turns.",
+    )
     args = parser.parse_args()
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     logger.info(version_info())
+    if args.dry_run:
+        logger.info("DRY RUN MODE: claude will not be invoked; an empty commit will be made instead")
 
     resolved_config_path = config_path(args.config)
     try:
@@ -275,7 +326,7 @@ def main() -> int:
     logger.info("selected repo: %s", repo_cfg.name)
 
     try:
-        run_for_repo(repo_cfg)
+        run_for_repo(repo_cfg, dry_run=args.dry_run)
     except AbortRun as e:
         logger.warning("[%s] run aborted: %s", repo_cfg.name, e)
         return 1

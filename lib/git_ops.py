@@ -114,23 +114,25 @@ def reset_hard(repo_path: Path, commit: str) -> None:
     _run(repo_path, ["clean", "-fd"])
 
 
-def commit_all(repo_path: Path, message: str, committer_name: str, committer_email: str) -> None:
+def _commit(repo_path: Path, commit_args: list[str], committer_name: str, committer_email: str) -> None:
     """Commit with an explicit identity passed via -c, rather than relying on
     the cron-iterate account having git user.name/user.email configured
     globally - keeps the tool self-contained with no extra install step."""
-    _run(repo_path, ["add", "-A"])
     _run(
         repo_path,
-        [
-            "-c",
-            f"user.name={committer_name}",
-            "-c",
-            f"user.email={committer_email}",
-            "commit",
-            "-m",
-            message,
-        ],
+        ["-c", f"user.name={committer_name}", "-c", f"user.email={committer_email}", *commit_args],
     )
+
+
+def commit_all(repo_path: Path, message: str, committer_name: str, committer_email: str) -> None:
+    _run(repo_path, ["add", "-A"])
+    _commit(repo_path, ["commit", "-m", message], committer_name, committer_email)
+
+
+def commit_empty(repo_path: Path, message: str, committer_name: str, committer_email: str) -> None:
+    """For --dry-run: makes an empty commit instead of staging changes, since
+    the agent was never invoked and there's nothing to stage."""
+    _commit(repo_path, ["commit", "--allow-empty", "-m", message], committer_name, committer_email)
 
 
 def push(repo_path: Path, branch: str) -> None:

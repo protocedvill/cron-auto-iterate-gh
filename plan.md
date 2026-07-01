@@ -30,7 +30,7 @@ human user's files.
 | **Repo access model** | **Dedicated clones under `/var/lib/cron-iterate/repos/`, owned by that user** | The automation never needs to enter the human's `$HOME`. Human's own working copy stays untouched; a `git pull` picks up pushed changes. |
 | **Code deployment model** | **Tool code deployed read-only to `/opt/cron-auto-iterate-gh`, owned by root** | The dev copy of this tool (in this repo, under the human's home dir) is what gets edited/committed; a separate deploy step copies it to a root-owned, cron-iterate-read-only location so the agent can't modify its own automation code even if it tried. |
 | **Sandbox layer** | **systemd service + timer with hardening directives** (`ProtectHome`, `ProtectSystem=strict`, `NoNewPrivileges`, etc.) | Enforces the isolation at the kernel/namespace level, independent of Unix file permissions — defense in depth over just "a different UID". |
-| **Git push credentials** | **Single SSH keypair generated for `cron-iterate`, added as a GitHub deploy key (write access) on each target repo individually** | One key to manage, but still repo-scoped (GitHub deploy keys are per-repo) rather than tied to a personal account token — compromise is contained to the configured repos. |
+| **Git push credentials** | **One SSH keypair per target repo, each added as that repo's GitHub deploy key, with SSH config `Host` aliases so git picks the right key per remote** | GitHub deploy keys are unique account-wide — the same public key cannot be added to a second repo at all (this was discovered during real install testing; the original plan here assumed reuse was possible and was wrong). Per-repo keys keep the narrowest possible blast radius (each key works on exactly one repo); `add-repo-key.sh` automates key generation + the SSH config alias per repo. |
 | **Claude Code credentials** | **Copy of the human's existing Claude Code credentials, placed in `cron-iterate`'s own home dir** | Shares the existing login/subscription as requested, without granting `cron-iterate` read access into the human's `$HOME` to fetch it live — it's a one-time copy the automation user owns outright. |
 
 ## Isolation & sandboxing
@@ -88,17 +88,30 @@ These are independent clones from the human's own working copy of the same
 GitHub repo — both point at the same remote, so pushes from one are visible
 to the other via normal `git fetch`/`pull`.
 
-### 4. Git credentials (single deploy key)
+### 4. Git credentials (one deploy key per repo)
+
+**Correction from the original design:** GitHub deploy keys are unique
+**account-wide**, not per-repo — attempting to add the same public key as a
+deploy key on a second repository is rejected outright ("key is already in
+use"). Discovered during real install testing; the original version of
+this plan assumed key reuse across repos was fine, which was wrong.
+
+Fix: one SSH keypair per target repo, plus an SSH config `Host` alias per
+repo so git presents the right key for the right remote (they're all still
+hostname `github.com`). `add-repo-key.sh <name>` automates this:
 
 ```bash
-sudo -u cron-iterate ssh-keygen -t ed25519 -f /var/lib/cron-iterate/.ssh/id_ed25519 -N ""
+./add-repo-key.sh <name>
 ```
-Add the resulting public key as a **Deploy Key with write access** on each
-target repo's GitHub settings page (Settings → Deploy keys → Add deploy
-key). Reusing the same keypair across repos is fine — deploy keys are
-scoped per-repo on GitHub's side regardless of how many repos reuse the same
-public key, so a leak still only grants access to the repos where it was
-explicitly added.
+
+It generates `/var/lib/cron-iterate/.ssh/id_ed25519_<name>`, appends a
+`Host github.com-<name>` block to `/var/lib/cron-iterate/.ssh/config`,
+seeds `known_hosts`, and prints the public key (add as a write-access
+Deploy Key on that one repo) plus the exact `remote:` value to use in
+`config.yaml` (`git@github.com-<name>:org/<name>.git`). Each key's blast
+radius is exactly one repo, same as originally intended — the fix changes
+*how* that's achieved (N keys + SSH aliases instead of one reused key), not
+the security goal itself.
 
 ### 5. Claude Code credentials
 
@@ -246,7 +259,9 @@ cron-auto-iterate-gh/
 ├── prompts/
 │   ├── implement_task.md  # template: "implement this TODO item"
 │   └── brainstorm.md       # template: "propose 3-5 improvements"
-└── deploy.sh              # rsyncs code to /opt/cron-auto-iterate-gh (see Isolation section)
+├── deploy.sh              # rsyncs code to /opt/cron-auto-iterate-gh (see Isolation section)
+├── uninstall.sh            # reverses the systemd/deploy/user setup
+└── add-repo-key.sh         # generates a per-repo SSH deploy key + SSH config alias
 ```
 
 Runtime state (`state.json`, `logs/`, repo clones, credentials) lives under
@@ -419,7 +434,7 @@ Not yet done — requires `sudo`/system changes, deliberately left for you to ru
 - [ ] Create the `cron-iterate` system user and `/var/lib/cron-iterate` directory tree
 - [ ] Run `deploy.sh` to publish code to `/opt/cron-auto-iterate-gh` (root-owned, group-readable by `cron-iterate`)
 - [ ] Fill in `config.yaml` with real target repos and copy it to `/var/lib/cron-iterate/config.yaml`
-- [ ] Generate the `cron-iterate` SSH deploy key and add its public half as a write-access deploy key on each target repo
+- [ ] Run `./add-repo-key.sh <name>` for each target repo and add the printed public key as a write-access deploy key on that repo (see corrected "Git credentials" section above — one keypair per repo, not one shared key)
 - [ ] Copy Claude Code credentials into `/var/lib/cron-iterate/.claude/`
 - [ ] Install `systemd/cron-iterate.service` and `.timer` to `/etc/systemd/system/`, then `sudo systemctl enable --now cron-iterate.timer`
 - [ ] Do one real end-to-end run against an actual throwaway GitHub repo (real `claude -p` invocation, real push) before pointing at real projects — the smoke test above stubbed the agent call out, so the real `claude` invocation itself is still unverified

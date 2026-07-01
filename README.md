@@ -84,31 +84,44 @@ sudo "$EDITOR" /var/lib/cron-iterate/config.yaml
 sudo chown cron-iterate:cron-iterate /var/lib/cron-iterate/config.yaml
 ```
 
-Fill in each repo's `name` and `remote` (SSH URL), and a `test_cmd` if the
-project has one (strongly recommended — this gates every push). See the
-comments in `config.yaml` and the "Configuration format" section of
+Fill in each repo's `name`, and a `test_cmd` if the project has one
+(strongly recommended — this gates every push). For `remote`, use a
+placeholder SSH URL for now (`git@github.com:your-org/<name>.git`) — step 5
+generates the actual per-repo deploy key and gives you the exact aliased
+`remote:` value to swap in. See the comments in `config.yaml` and the
+"Configuration format" section of
 `plan.md` for all fields.
 
 ## 5. Set up git push credentials
 
-Generate a single SSH keypair for the automation user:
+GitHub deploy keys are unique **account-wide**, not per-repo — the same
+public key cannot be added as a deploy key to a second repository at all
+(GitHub rejects it with "key is already in use"). So each target repo
+needs its **own** SSH keypair, with an SSH config `Host` alias so git knows
+which key to present for which remote (they're all still hostname
+`github.com`).
+
+Run this once **per target repo** (`<name>` should match that repo's
+`name:` in `config.yaml`):
 
 ```bash
-sudo -u cron-iterate ssh-keygen -t ed25519 -f /var/lib/cron-iterate/.ssh/id_ed25519 -N ""
-sudo -u cron-iterate cat /var/lib/cron-iterate/.ssh/id_ed25519.pub
+./add-repo-key.sh <name>
 ```
 
-For **each** target repo, add that public key on GitHub as a **Deploy key**
-with **write access**: repo → Settings → Deploy keys → Add deploy key.
-Reusing the same keypair across repos is fine — GitHub still scopes access
-per-repo, so a leak only affects repos where you explicitly added it.
+It generates a keypair at `/var/lib/cron-iterate/.ssh/id_ed25519_<name>`,
+adds a `Host github.com-<name>` alias to
+`/var/lib/cron-iterate/.ssh/config`, seeds `known_hosts` for `github.com`
+if needed, and prints:
 
-Add GitHub to the automation user's known hosts so the first clone/push
-doesn't hang on a host-key prompt:
+1. The public key to add on GitHub as a **write-access Deploy key**
+   (repo → Settings → Deploy keys → Add deploy key) — **on that one repo
+   only**.
+2. The exact `remote:` value to use for this repo in `config.yaml`:
+   `git@github.com-<name>:your-org/<name>.git` (same owner/repo, just
+   `github.com` → the alias).
 
-```bash
-sudo -u cron-iterate bash -c 'ssh-keyscan github.com >> /var/lib/cron-iterate/.ssh/known_hosts'
-```
+After running it for a repo, update that repo's `remote:` in
+`config.yaml` to the aliased form before continuing to step 6.
 
 ## 6. Set up Claude Code credentials
 
@@ -208,6 +221,19 @@ behavior:
 
 ```bash
 sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check -v
+```
+
+`--dry-run` exercises the entire pipeline (pre-flight checks, `test_cmd`,
+commit, push) **except calling `claude`** — instead of real edits it makes
+an empty commit tagged `[DRY RUN]` with the task it would have implemented
+(or "would brainstorm" if the backlog is empty), then pushes it like a real
+run would. This is the way to verify the surrounding automation (sandbox
+permissions, git identity, deploy key, network egress, `test_cmd` actually
+running under the sandboxed environment) without spending any agent turns
+or touching real files:
+
+```bash
+sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --dry-run
 ```
 
 ## Troubleshooting

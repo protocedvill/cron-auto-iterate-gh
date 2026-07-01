@@ -6,7 +6,11 @@
 
 repos:
   - name: example-repo
-    remote: git@github.com:your-org/example-repo.git
+    # GitHub deploy keys are unique account-wide (one repo per key), so
+    # each repo here needs its own keypair + SSH config alias - run
+    # `./add-repo-key.sh example-repo` (see README step 5), which prints
+    # the exact aliased remote to use below.
+    remote: git@github.com-example-repo:your-org/example-repo.git
     test_cmd: "npm test"
     todo_file: TODO.md   # default, can be omitted
     # branch: main        # default: repo's current HEAD branch after clone
