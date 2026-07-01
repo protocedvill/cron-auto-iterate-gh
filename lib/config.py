@@ -17,7 +17,7 @@ DEFAULT_MAX_TURNS = 40
 DEFAULT_TIMEOUT_SECONDS = 900
 DEFAULT_FORBIDDEN_PATHS = [
     ".git/**",
-    ".env*",
+    "**/.env*",
     "**/*.pem",
     "**/id_rsa*",
     ".github/workflows/**",

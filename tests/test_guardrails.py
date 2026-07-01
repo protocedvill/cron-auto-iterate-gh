@@ -35,19 +35,27 @@ def test_find_violations_only_reports_each_file_once():
 
 
 def test_find_violations_preserves_order_and_reports_multiple_files():
-    changed = ["src/app.py", ".env", "notes.txt", "backend/secrets/token.txt"]
+    changed = ["src/app.py", "backend/.env", "notes.txt", "backend/secrets/token.txt"]
     violations = guardrails.find_violations(changed, DEFAULT_FORBIDDEN_PATHS)
 
-    assert violations == [".env", "backend/secrets/token.txt"]
+    assert violations == ["backend/.env", "backend/secrets/token.txt"]
 
 
 def test_find_violations_top_level_env_pattern_misses_nested_env():
-    # Documents the current (known-buggy) behavior of the default
-    # ".env*" pattern: fnmatch's "*" does not cross "/", so nested env
-    # files are not caught without a "**/" prefix.
+    # fnmatch's "*" does not cross "/", so a bare ".env*" pattern only
+    # matches top-level files; nested ones need a "**/" prefix (see
+    # DEFAULT_FORBIDDEN_PATHS, which uses "**/.env*").
     violations = guardrails.find_violations(["backend/.env"], [".env*"])
 
     assert violations == []
+
+
+def test_find_violations_default_env_pattern_matches_nested_env():
+    violations = guardrails.find_violations(
+        ["backend/.env"], DEFAULT_FORBIDDEN_PATHS
+    )
+
+    assert violations == ["backend/.env"]
 
 
 def test_find_violations_empty_forbidden_paths_allows_everything():
