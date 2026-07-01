@@ -217,6 +217,14 @@ sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check -v
   and expected `./deploy.sh` to pick it up — it doesn't (see "Debugging"
   above). Check the `config: ...` log line, and if needed, `sudo cp
   config.yaml /var/lib/cron-iterate/config.yaml`.
+- **`Permission ... denied to deploy key` on push, for a repo name you
+  don't recognize**: the clone's `origin` was set the first time it was
+  cloned and is never updated automatically. If you changed a repo's
+  `remote:` in `config.yaml` *after* it was already cloned once, the local
+  clone keeps pushing to the old remote forever. `iterate.py --check` flags
+  this as a `remote: MISMATCH`. Fix: `sudo rm -rf
+  /var/lib/cron-iterate/repos/<name>` to let it re-clone from the current
+  `remote:`.
 - **`working tree is not clean` keeps happening even right after a fresh
   clone**: run `--check` on that repo to see the exact dirty files. If a
   previous run crashed with an exception the code didn't anticipate

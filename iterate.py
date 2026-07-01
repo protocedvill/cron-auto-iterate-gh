@@ -59,6 +59,19 @@ def run_for_repo(repo_cfg: RepoConfig) -> None:
 
     if git_ops.clone_if_missing(repo_path, repo_cfg.remote):
         logger.info("cloned %s into %s", repo_cfg.remote, repo_path)
+    else:
+        # config.yaml's remote: for this repo may have changed since it was
+        # first cloned - clone_if_missing only clones once, so a stale
+        # origin URL would otherwise silently push to the wrong repo.
+        current_remote = git_ops.get_remote_url(repo_path)
+        if current_remote != repo_cfg.remote:
+            raise AbortRun(
+                f"configured remote ({repo_cfg.remote}) does not match this "
+                f"clone's origin ({current_remote}) - config.yaml's remote for "
+                f"'{repo_cfg.name}' was changed after it was already cloned. "
+                f"Delete {repo_path} and let the next run re-clone from the "
+                "current remote, or fix config.yaml if the change was unintended."
+            )
 
     branch = repo_cfg.branch or git_ops.get_current_branch(repo_path)
     logger.info("[%s] path=%s branch=%s", repo_cfg.name, repo_path, branch)
@@ -165,6 +178,19 @@ def run_diagnostics(repo_cfg: RepoConfig) -> None:
     if not repo_cfg.path.exists():
         print("status:      NOT CLONED YET (will be cloned fresh on the next real run)")
         return
+
+    try:
+        current_remote = git_ops.get_remote_url(repo_cfg.path)
+        if current_remote != repo_cfg.remote:
+            print(f"remote:      MISMATCH - clone's origin is {current_remote}")
+            print(
+                "             config.yaml's remote for this repo changed after it was "
+                "cloned; delete the local path above to re-clone from the current remote"
+            )
+        else:
+            print("remote:      matches config")
+    except git_ops.GitError as e:
+        print(f"remote:      ERROR - {e}")
 
     branch = repo_cfg.branch or git_ops.get_current_branch(repo_cfg.path)
     print(f"branch:      {branch}")

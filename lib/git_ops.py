@@ -55,6 +55,10 @@ def get_current_branch(repo_path: Path) -> str:
     return _run(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
 
 
+def get_remote_url(repo_path: Path, name: str = "origin") -> str:
+    return _run(repo_path, ["remote", "get-url", name]).stdout.strip()
+
+
 def status_porcelain(repo_path: Path) -> str:
     """Raw `git status --porcelain` output - empty string means clean."""
     return _run(repo_path, ["status", "--porcelain"]).stdout.strip()
