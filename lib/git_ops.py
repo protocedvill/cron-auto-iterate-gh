@@ -42,17 +42,34 @@ def clone_if_missing(repo_path: Path, remote: str) -> bool:
     if repo_path.exists():
         return False
     repo_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
+    result = subprocess.run(
         ["git", "clone", remote, str(repo_path)],
         capture_output=True,
         text=True,
-        check=True,
     )
+    logger.debug(
+        "git clone %s %s -> rc=%s stdout=%r stderr=%r",
+        remote,
+        repo_path,
+        result.returncode,
+        result.stdout.strip(),
+        result.stderr.strip(),
+    )
+    if result.returncode != 0:
+        raise GitError(f"git clone {remote} failed: {result.stderr.strip()}")
     return True
 
 
 def get_current_branch(repo_path: Path) -> str:
-    return _run(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    """`rev-parse --abbrev-ref HEAD` fails on a freshly cloned empty repo
+    (zero commits -> HEAD is an unborn branch, nothing for rev-parse to
+    resolve). `symbolic-ref` reads the branch name directly without
+    requiring a commit to exist, so it works in both cases."""
+    return _run(repo_path, ["symbolic-ref", "--short", "HEAD"]).stdout.strip()
+
+
+def has_any_commits(repo_path: Path) -> bool:
+    return _run(repo_path, ["rev-parse", "HEAD"], check=False).returncode == 0
 
 
 def get_remote_url(repo_path: Path, name: str = "origin") -> str:

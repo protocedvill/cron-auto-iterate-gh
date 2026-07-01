@@ -238,6 +238,18 @@ sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --dry-run
 
 ## Troubleshooting
 
+- **`fatal: ambiguous argument 'HEAD': unknown revision or path not in the
+  working tree`**: the target repo has zero commits (a brand-new, truly
+  empty GitHub repo). Push at least one commit (e.g. a README) to it before
+  adding it here — this tool assumes there's existing history to build on.
+  `--check` reports this clearly as `EMPTY REPO` instead of crashing, as of
+  the fix for this.
+- **`ERROR: ... Permission to <owner>/<repo>.git denied to deploy key`**:
+  different from a plain SSH auth failure — this means the key authenticated
+  fine (so clone/fetch worked) but was registered **without write access**.
+  GitHub doesn't let you toggle that after creation: delete the deploy key
+  on that repo's Settings → Deploy keys page and re-add the same public key
+  with "Allow write access" checked this time.
 - **It's iterating on repos I didn't expect / doesn't see my config
   changes**: you almost certainly edited `config.yaml` in this dev repo
   and expected `./deploy.sh` to pick it up — it doesn't (see "Debugging"

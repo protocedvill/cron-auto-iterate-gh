@@ -76,6 +76,14 @@ def run_for_repo(repo_cfg: RepoConfig, dry_run: bool = False) -> None:
     branch = repo_cfg.branch or git_ops.get_current_branch(repo_path)
     logger.info("[%s] path=%s branch=%s", repo_cfg.name, repo_path, branch)
 
+    if not git_ops.has_any_commits(repo_path):
+        raise AbortRun(
+            f"'{repo_cfg.name}' has no commits yet (repo is completely empty). "
+            "Push at least one initial commit (e.g. a README) to it on GitHub "
+            "before adding it to this automation - the tool assumes there's "
+            "existing history to build on, not a from-scratch repo."
+        )
+
     dirty = git_ops.status_porcelain(repo_path)
     if dirty:
         raise AbortRun(
@@ -235,6 +243,10 @@ def run_diagnostics(repo_cfg: RepoConfig) -> None:
 
     branch = repo_cfg.branch or git_ops.get_current_branch(repo_cfg.path)
     print(f"branch:      {branch}")
+
+    if not git_ops.has_any_commits(repo_cfg.path):
+        print("status:      EMPTY REPO - no commits yet, push an initial commit first")
+        return
 
     dirty = git_ops.status_porcelain(repo_cfg.path)
     if dirty:
