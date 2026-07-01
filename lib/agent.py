@@ -8,7 +8,9 @@ PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 def render_prompt(template_name: str, **kwargs) -> str:
     template = (PROMPTS_DIR / f"{template_name}.md").read_text()
-    return template.format(**kwargs)
+    for key, value in kwargs.items():
+        template = template.replace("{" + key + "}", value)
+    return template
 
 
 def run_claude(
