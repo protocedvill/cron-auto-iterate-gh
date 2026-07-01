@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from lib import agent, backlog, git_ops, guardrails, state
-from lib.config import Config, ConfigError, RepoConfig, base_dir, load_config
+from lib.config import Config, ConfigError, RepoConfig, base_dir, config_path, load_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("iterate")
@@ -218,11 +218,18 @@ def main() -> int:
 
     logger.info(version_info())
 
+    resolved_config_path = config_path(args.config)
     try:
         config = load_config(args.config)
     except ConfigError as e:
         logger.error("config error: %s", e)
         return 1
+
+    logger.info(
+        "config: %s (repos: %s)",
+        resolved_config_path,
+        ", ".join(r.name for r in config.repos),
+    )
 
     if args.check:
         repos_to_check = [r for r in config.repos if not args.repo or r.name == args.repo]

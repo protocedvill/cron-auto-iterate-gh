@@ -35,6 +35,15 @@ def base_dir() -> Path:
     return Path(os.environ.get("CRON_ITERATE_HOME", "/var/lib/cron-iterate"))
 
 
+def config_path(path: Path | None = None) -> Path:
+    """Resolve which config.yaml a run will actually use - deploy.sh never
+    copies config.yaml (so editing the live one isn't clobbered by a code
+    redeploy), which means the dev repo's config.yaml and the live one at
+    base_dir()/config.yaml are two independent files that can silently
+    drift apart. Centralized here so callers log the same path they load."""
+    return path or (base_dir() / "config.yaml")
+
+
 @dataclass
 class RepoConfig:
     name: str
@@ -65,7 +74,7 @@ def _require(mapping: dict, key: str, context: str) -> object:
 
 
 def load_config(path: Path | None = None) -> Config:
-    path = path or (base_dir() / "config.yaml")
+    path = config_path(path)
     if not path.exists():
         raise ConfigError(f"config file not found: {path}")
 

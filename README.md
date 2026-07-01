@@ -167,6 +167,25 @@ dev clone, or the `sha256=` against `sha256sum iterate.py` there. A
 dev tree. If you forgot to run `./deploy.sh` after an edit, this is the
 line that tells you.
 
+The very next log line every run always prints which `config.yaml` it
+actually loaded and which repos it found in it, e.g.:
+
+```
+config: /var/lib/cron-iterate/config.yaml (repos: real-repo-a, real-repo-b)
+```
+
+This matters because **`deploy.sh` never touches `config.yaml`** (on
+purpose, so editing the live config on the server doesn't get clobbered by
+a code redeploy) — the copy in this dev repo and
+`/var/lib/cron-iterate/config.yaml` are two independent files that don't
+sync automatically. If this line lists repos you don't recognize or
+expect, you edited the wrong copy; re-sync with:
+
+```bash
+sudo cp config.yaml /var/lib/cron-iterate/config.yaml
+sudo chown cron-iterate:cron-iterate /var/lib/cron-iterate/config.yaml
+```
+
 For anything else, run the read-only diagnostic instead of waiting for the
 timer or digging through `journalctl`:
 
@@ -193,6 +212,11 @@ sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --check -v
 
 ## Troubleshooting
 
+- **It's iterating on repos I didn't expect / doesn't see my config
+  changes**: you almost certainly edited `config.yaml` in this dev repo
+  and expected `./deploy.sh` to pick it up — it doesn't (see "Debugging"
+  above). Check the `config: ...` log line, and if needed, `sudo cp
+  config.yaml /var/lib/cron-iterate/config.yaml`.
 - **`working tree is not clean` keeps happening even right after a fresh
   clone**: run `--check` on that repo to see the exact dirty files. If a
   previous run crashed with an exception the code didn't anticipate
