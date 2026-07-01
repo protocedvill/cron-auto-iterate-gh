@@ -23,7 +23,7 @@ human user's files.
 | Repo selection per run | Round-robin over the configured list, one repo per run | Spreads iterations evenly; state persisted between runs. |
 | Cron frequency | Daily | Low cost, enough time to notice a bad change before the next one lands. |
 | Empty backlog behavior | Generate 3-5 new ideas into `TODO.md`, commit just that file, stop | Keeps "brainstorm" and "implement" as separate, independently-reviewable commits. |
-| Dirty/unsynced repo at start | Abort this run for that repo, try again next scheduled run | Never touch a repo with the user's own in-progress work. |
+| Dirty/unsynced repo at start | Dirty tree or local commits ahead of origin → abort, try again next scheduled run. Purely behind origin (0 ahead) → auto fast-forward (`--ff-only`), then proceed. | Never touch a repo with the user's own uncommitted/unpushed work — but being purely behind has zero local divergence, so a `--ff-only` merge is provably lossless (it fails loudly instead of merging/rebasing if that assumption is ever wrong). Added after this recurred in practice: the human actively develops one of the target repos (this tool's own source) from their own machine, so "behind origin" happens routinely and aborting every time was pure friction with no safety benefit. |
 | Agent permissions | `claude --dangerously-skip-permissions`, invoked with `cwd` set to the target repo | Scopes blast radius to that one repo's directory by construction. |
 | Cost/runtime cap | `--max-turns` on the claude CLI + wall-clock `timeout` wrapper (e.g. 15 min) | Bounds token spend and prevents a hung run from blocking the next cron tick. |
 | **Execution identity** | **Dedicated unprivileged system user (`cron-iterate`), no shell login** | Isolates the automation from the human user's account entirely; a misbehaving agent run can't read/write anything outside what this user owns. |
@@ -336,9 +336,11 @@ Standard GitHub checklist so it's human-readable and diffable:
 2. **Pick repo**: `repos[state.last_index % len(repos)]`.
 3. **Pre-flight checks** on `/var/lib/cron-iterate/repos/<name>` (abort + log + advance pointer if any fail):
    - Directory exists and is a git repo (clone it fresh from `remote:` if it doesn't exist yet — first-run bootstrap).
+   - Repo has at least one commit (abort with a clear message if it's a brand-new empty repo).
    - `git status --porcelain` is empty (no dirty working tree).
-   - Local branch has no unpushed commits ahead of its upstream, and is not
-     behind (fetch + compare) — i.e. fully in sync with remote before we start.
+   - Fetch, then compare HEAD vs `origin/<branch>`:
+     - Any commits ahead of origin → abort (shouldn't happen; every commit is pushed immediately after being made, so this signals something needs human attention).
+     - Purely behind origin (0 ahead) → `git merge --ff-only origin/<branch>`, log it, and continue (lossless by construction).
 4. **Read backlog** (`TODO.md`):
    - If it has an unchecked item → **implement mode**, task = first unchecked item.
    - Else → **brainstorm mode**.

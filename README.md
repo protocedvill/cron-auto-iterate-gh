@@ -291,10 +291,19 @@ sudo -u cron-iterate python3 /opt/cron-auto-iterate-gh/iterate.py --dry-run
   account never needs its own `git config --global` setup. If you see this,
   you're running code from before that fix — redeploy (`./deploy.sh`) and
   check the version line in the journal.
-- **Run aborts with "working tree is not clean" / "not in sync with
-  origin"**: by design — the tool refuses to touch a repo clone that isn't
-  in a known-good state. Check `/var/lib/cron-iterate/repos/<name>`
-  manually; a previous run may have failed mid-way and left it dirty.
+- **Run aborts with "working tree is not clean"**: by design — the tool
+  refuses to touch a repo clone that has uncommitted changes. Check
+  `/var/lib/cron-iterate/repos/<name>` manually; a previous run may have
+  failed mid-way and left it dirty.
+- **Run aborts with "N local commit(s) ahead of origin"**: also by design,
+  and shouldn't normally happen — every commit this tool makes is pushed
+  right after. If you see it, something needs a human look (e.g. a push
+  silently failed after a commit succeeded). Note: being purely *behind*
+  origin (0 ahead) is **not** an error — the tool auto-fast-forwards and
+  continues, since that's always safe when there's no local divergence.
+  This matters if you actively develop a repo that's also an automation
+  target: pushing from your own machine just means the next run catches up
+  automatically instead of aborting.
 
 ## Updating
 

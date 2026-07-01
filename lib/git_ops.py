@@ -109,6 +109,14 @@ def is_synced(repo_path: Path, branch: str) -> bool:
     return counts == (0, 0)
 
 
+def fast_forward(repo_path: Path, branch: str) -> None:
+    """Only call this when strictly behind (0 ahead) - a --ff-only merge can
+    never lose local work, and fails loudly instead of merging/rebasing if
+    the branches have actually diverged (which shouldn't happen given the
+    0-ahead precondition, but --ff-only is the backstop if it somehow does)."""
+    _run(repo_path, ["merge", "--ff-only", f"origin/{branch}"])
+
+
 def get_head_commit(repo_path: Path) -> str:
     return _run(repo_path, ["rev-parse", "HEAD"]).stdout.strip()
 

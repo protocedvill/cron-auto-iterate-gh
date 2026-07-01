@@ -97,12 +97,31 @@ def run_for_repo(repo_cfg: RepoConfig, dry_run: bool = False) -> None:
             f"no origin/{branch} tracking ref found after fetch "
             "(remote branch renamed/deleted, or 'branch:' in config.yaml is wrong?)"
         )
-    if counts != (0, 0):
-        ahead, behind = counts
+    ahead, behind = counts
+    if ahead > 0:
+        # Every commit this tool makes is pushed immediately afterward, so
+        # local commits origin doesn't have shouldn't exist under normal
+        # operation - could mean a previous push silently failed after
+        # committing, or someone committed directly on the clone. Either
+        # way this needs a human to look, not an automatic merge/rebase.
         raise AbortRun(
-            f"not in sync with origin/{branch}: {ahead} commit(s) ahead, "
-            f"{behind} commit(s) behind"
+            f"{ahead} local commit(s) ahead of origin/{branch} (and {behind} "
+            "behind) - this shouldn't happen since commits are pushed "
+            "immediately after being made. Investigate manually rather than "
+            "auto-resolving (a merge/rebase here could rewrite or lose history)."
         )
+    if behind > 0:
+        # Purely behind, zero local divergence: a --ff-only merge is
+        # provably lossless (it can't lose local work, since there isn't
+        # any not already on origin) and fails loudly instead of silently
+        # doing something riskier if this assumption is ever wrong.
+        logger.info(
+            "[%s] %s commit(s) behind origin/%s - fast-forwarding",
+            repo_cfg.name,
+            behind,
+            branch,
+        )
+        git_ops.fast_forward(repo_path, branch)
 
     # Nothing has touched the working tree yet at this point. Everything
     # from here on (writing TODO.md, running the agent, running test_cmd)
@@ -263,8 +282,16 @@ def run_diagnostics(repo_cfg: RepoConfig) -> None:
             print(f"sync status: UNKNOWN (no origin/{branch} tracking ref found)")
         elif counts == (0, 0):
             print("sync status: in sync with origin")
+        elif counts[0] == 0:
+            print(
+                f"sync status: {counts[1]} behind origin/{branch} "
+                "(a real run will auto-fast-forward, not abort)"
+            )
         else:
-            print(f"sync status: {counts[0]} ahead, {counts[1]} behind origin/{branch}")
+            print(
+                f"sync status: {counts[0]} ahead, {counts[1]} behind origin/{branch} "
+                "(a real run will abort - local commits ahead of origin shouldn't happen)"
+            )
     except git_ops.GitError as e:
         print(f"sync status: ERROR - {e}")
 
